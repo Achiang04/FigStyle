@@ -29,13 +29,13 @@ When you copy CSS in Figma natively, it only copies the outermost parent node, i
 
 ## 🛠️ How to Install in Figma Desktop (30 Seconds)
 
-1. Open **Figma Desktop**.
+1. Open **Figma Desktop** and enter any design file.
 2. Navigate to the top menu:
-   - **Plugins** ➔ **Development** ➔ **Import plugin from manifest...**
-   - *(Or press `Cmd + /` and type `Import plugin from manifest`)*.
-3. Browse to the root of this project folder and select `manifest.json`.
-4. Click **Open**.
-5. FigStyles is now installed in your Figma Desktop!
+   - **Plugins ➔ Development ➔ New plugin...**
+3. Select **Figma design**, then click **Next**.
+4. Choose **Custom UI** (or **Run once**), then click **Save as** and name it `FigStyle`.
+5. Click **Open folder** from the success prompt, then replace the default contents with your local `manifest.json` and `dist` folder.
+6. FigStyles is now installed and ready to run from **Plugins ➔ Development ➔ FigStyles - AI & CSS Extractor**!
 
 ---
 
