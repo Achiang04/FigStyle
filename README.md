@@ -33,11 +33,8 @@ When you copy CSS in Figma natively, it only copies the outermost parent node, i
 2. Navigate to the top menu:
    - **Plugins** ➔ **Development** ➔ **Import plugin from manifest...**
    - *(Or press `Cmd + /` and type `Import plugin from manifest`)*.
-3. Browse to this project folder:
-   ```
-   /Users/jecky/Documents/Code/FigStyle/manifest.json
-   ```
-4. Select `manifest.json` and click **Open**.
+3. Browse to the root of this project folder and select `manifest.json`.
+4. Click **Open**.
 5. FigStyles is now installed in your Figma Desktop!
 
 ---
