@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FigDeepStyles</title>
+  <style>
+    :root {
+      --bg-primary: #1e1e1e;
+      --bg-secondary: #252526;
+      --bg-tertiary: #2d2d30;
+      --text-primary: #ffffff;
+      --text-secondary: #969696;
+      --accent: #0d99ff;
+      --accent-hover: #007be5;
+      --border-color: #383838;
+      --code-bg: #181818;
+      --success: #10b981;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      font-size: 12px;
+      user-select: none;
+    }
+
+    /* Header */
+    .header {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-secondary);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .logo-badge {
+      background: linear-gradient(135deg, #0d99ff 0%, #7b61ff 100%);
+      color: #fff;
+      font-weight: 700;
+      font-size: 11px;
+      padding: 3px 7px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+
+    .header-title {
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    .btn-refresh {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s;
+    }
+
+    .btn-refresh:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    /* Screen Meta Bar */
+    .meta-bar {
+      padding: 8px 14px;
+      background: var(--bg-primary);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .meta-target {
+      color: var(--text-primary);
+      font-weight: 500;
+      max-width: 320px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .badge-count {
+      background: var(--bg-tertiary);
+      color: #38bdf8;
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-weight: 600;
+    }
+
+    /* Tabs */
+    .tabs-bar {
+      display: flex;
+      border-bottom: 1px solid var(--border-color);
+      background: var(--bg-secondary);
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 9px 4px;
+      text-align: center;
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 11.5px;
+      font-weight: 500;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-primary);
+    }
+
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+      background: var(--bg-primary);
+    }
+
+    /* Main Content Area */
+    .content-area {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .tab-pane {
+      display: none;
+      flex-direction: column;
+      height: 100%;
+      padding: 12px;
+      overflow: hidden;
+    }
+
+    .tab-pane.active {
+      display: flex;
+    }
+
+    /* Action bar above code */
+    .action-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .sub-switch {
+      display: flex;
+      gap: 4px;
+      background: var(--bg-secondary);
+      padding: 2px;
+      border-radius: 4px;
+      border: 1px solid var(--border-color);
+    }
+
+    .sub-btn {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      padding: 3px 8px;
+      font-size: 11px;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+
+    .sub-btn.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-copy-primary {
+      background: var(--accent);
+      border: none;
+      color: #ffffff;
+      padding: 6px 14px;
+      border-radius: 5px;
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s;
+    }
+
+    .btn-copy-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    /* Code Container */
+    .code-box {
+      flex: 1;
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 10px;
+      overflow: auto;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      color: #d4d4d4;
+      white-space: pre;
+      user-select: text;
+    }
+
+    /* Assets Grid */
+    .assets-list {
+      flex: 1;
+      overflow-y: auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 10px;
+      padding-right: 4px;
+    }
+
+    .asset-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      transition: border-color 0.15s;
+    }
+
+    .asset-card:hover {
+      border-color: var(--accent);
+    }
+
+    .asset-preview {
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-tertiary);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .asset-preview svg {
+      max-width: 28px;
+      max-height: 28px;
+    }
+
+    .asset-name {
+      font-size: 10.5px;
+      font-weight: 500;
+      color: var(--text-primary);
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      width: 100%;
+    }
+
+    .asset-size {
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+
+    .btn-copy-asset {
+      width: 100%;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 4px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn-copy-asset:hover {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+
+    /* States */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      text-align: center;
+      padding: 24px;
+      color: var(--text-secondary);
+    }
+
+    .empty-icon {
+      font-size: 32px;
+      margin-bottom: 12px;
+      opacity: 0.8;
+    }
+
+    .empty-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+    }
+
+    .empty-desc {
+      font-size: 11.5px;
+      line-height: 1.4;
+      max-width: 280px;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%) translateY(50px);
+      background: #10b981;
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      opacity: 0;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      pointer-events: none;
+      z-index: 1000;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <div class="logo-badge">AI SPEC</div>
+      <div class="header-title">FigDeepStyles</div>
+    </div>
+    <button class="btn-refresh" id="btnRefresh" title="Re-scan selection">
+      <span>🔄</span> Re-scan
+    </button>
+  </div>
+
+  <!-- Meta Bar -->
+  <div class="meta-bar">
+    <div class="meta-target" id="metaTarget">No selection</div>
+    <div id="metaAssets">
+      <span class="badge-count" id="badgeCount">0 SVGs</span>
+    </div>
+  </div>
+
+  <!-- Tabs Navigation -->
+  <div class="tabs-bar">
+    <button class="tab-btn active" data-tab="tab-ai">🤖 AI Prompt & Spec</button>
+    <button class="tab-btn" data-tab="tab-css">🎨 Stylesheets</button>
+    <button class="tab-btn" data-tab="tab-assets">📦 SVGs & Assets</button>
+  </div>
+
+  <!-- Main Content Panes -->
+  <div class="content-area">
+    <!-- Empty / Loading State Container -->
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon" id="emptyIcon">🎯</div>
+      <div class="empty-title" id="emptyTitle">Select a Frame or Screen</div>
+      <div class="empty-desc" id="emptyDesc">
+        Click any screen, component, or card in Figma to extract its full hierarchy, typography, and SVG assets in 1 click.
+      </div>
+    </div>
+
+    <!-- Tab 1: AI Prompt & Spec -->
+    <div class="tab-pane" id="tab-ai">
+      <div class="action-row">
+        <div style="color: var(--text-secondary); font-size: 11px;">
+          Paste directly into Antigravity, Cursor, or Claude
+        </div>
+        <button class="btn-copy-primary" id="btnCopyAi">
+          <span>📋</span> Copy AI Spec
+        </button>
+      </div>
+      <div class="code-box" id="codeAi"></div>
+    </div>
+
+    <!-- Tab 2: Stylesheets (CSS / React Native) -->
+    <div class="tab-pane" id="tab-css">
+      <div class="action-row">
+        <div class="sub-switch">
+          <button class="sub-btn active" id="subBtnCss">CSS</button>
+          <button class="sub-btn" id="subBtnRn">React Native</button>
+        </div>
+        <button class="btn-copy-primary" id="btnCopyStyle">
+          <span>📋</span> Copy Styles
+        </button>
+      </div>
+      <div class="code-box" id="codeStyle"></div>
+    </div>
+
+    <!-- Tab 3: SVGs & Assets -->
+    <div class="tab-pane" id="tab-assets">
+      <div class="action-row">
+        <div style="color: var(--text-secondary); font-size: 11px;" id="assetSummaryText">
+          0 extracted SVGs
+        </div>
+        <button class="btn-copy-primary" id="btnCopyAllSvgs">
+          <span>📦</span> Copy All SVGs (JSON)
+        </button>
+      </div>
+      <div class="assets-list" id="assetsGrid"></div>
+    </div>
+  </div>
+
+  <!-- Toast feedback -->
+  <div class="toast" id="toast">Copied to clipboard!</div>
+
+  <script>
+    let currentData = null;
+    let currentStyleMode = 'css'; // 'css' | 'rn'
+
+    // UI elements
+    const emptyState = document.getElementById('emptyState');
+    const emptyIcon = document.getElementById('emptyIcon');
+    const emptyTitle = document.getElementById('emptyTitle');
+    const emptyDesc = document.getElementById('emptyDesc');
+
+    const metaTarget = document.getElementById('metaTarget');
+    const badgeCount = document.getElementById('badgeCount');
+    const btnRefresh = document.getElementById('btnRefresh');
+
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabPanes = {
+      'tab-ai': document.getElementById('tab-ai'),
+      'tab-css': document.getElementById('tab-css'),
+      'tab-assets': document.getElementById('tab-assets')
+    };
+
+    const codeAi = document.getElementById('codeAi');
+    const codeStyle = document.getElementById('codeStyle');
+    const btnCopyAi = document.getElementById('btnCopyAi');
+    const btnCopyStyle = document.getElementById('btnCopyStyle');
+    const subBtnCss = document.getElementById('subBtnCss');
+    const subBtnRn = document.getElementById('subBtnRn');
+
+    const assetsGrid = document.getElementById('assetsGrid');
+    const assetSummaryText = document.getElementById('assetSummaryText');
+    const btnCopyAllSvgs = document.getElementById('btnCopyAllSvgs');
+    const toast = document.getElementById('toast');
+
+    // Show Toast
+    function showToast(text = 'Copied to clipboard!') {
+      toast.textContent = text;
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2000);
+    }
+
+    // Copy to clipboard helper
+    async function copyText(text, successMsg = 'Copied to clipboard!') {
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast(successMsg);
+      } catch (err) {
+        // Fallback for iframe restrictions
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        showToast(successMsg);
+      }
+    }
+
+    // Tab switching
+    tabButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        tabButtons.forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        const targetTab = btn.getAttribute('data-tab');
+        Object.keys(tabPanes).forEach((k) => {
+          if (k === targetTab) {
+            tabPanes[k].classList.add('active');
+          } else {
+            tabPanes[k].classList.remove('active');
+          }
+        });
+      });
+    });
+
+    // Sub switch between CSS and React Native
+    subBtnCss.addEventListener('click', () => {
+      currentStyleMode = 'css';
+      subBtnCss.classList.add('active');
+      subBtnRn.classList.remove('active');
+      updateStyleCode();
+    });
+
+    subBtnRn.addEventListener('click', () => {
+      currentStyleMode = 'rn';
+      subBtnRn.classList.add('active');
+      subBtnCss.classList.remove('active');
+      updateStyleCode();
+    });
+
+    function updateStyleCode() {
+      if (!currentData) return;
+      if (currentStyleMode === 'css') {
+        codeStyle.textContent = currentData.css;
+      } else {
+        codeStyle.textContent = currentData.reactNative;
+      }
+    }
+
+    // Render Assets
+    function renderAssets(assets) {
+      assetsGrid.innerHTML = '';
+      const keys = Object.keys(assets || {});
+      assetSummaryText.textContent = `${keys.length} extracted SVGs`;
+      badgeCount.textContent = `${keys.length} SVGs`;
+
+      if (keys.length === 0) {
+        assetsGrid.innerHTML = '<div style="color: var(--text-secondary); grid-column: 1/-1; padding: 20px; text-align: center;">No vector icons found in selection.</div>';
+        return;
+      }
+
+      keys.forEach((key) => {
+        const item = assets[key];
+        const card = document.createElement('div');
+        card.className = 'asset-card';
+
+        const preview = document.createElement('div');
+        preview.className = 'asset-preview';
+        preview.innerHTML = item.svg;
+
+        const name = document.createElement('div');
+        name.className = 'asset-name';
+        name.title = item.name;
+        name.textContent = item.name;
+
+        const size = document.createElement('div');
+        size.className = 'asset-size';
+        size.textContent = `${item.width} × ${item.height}px`;
+
+        const btnCopy = document.createElement('button');
+        btnCopy.className = 'btn-copy-asset';
+        btnCopy.textContent = 'Copy SVG';
+        btnCopy.addEventListener('click', () => {
+          copyText(item.svg, `Copied SVG: ${item.name}`);
+        });
+
+        card.appendChild(preview);
+        card.appendChild(name);
+        card.appendChild(size);
+        card.appendChild(btnCopy);
+        assetsGrid.appendChild(card);
+      });
+    }
+
+    // Copy Buttons
+    btnCopyAi.addEventListener('click', () => {
+      if (currentData && currentData.aiSpec) {
+        copyText(currentData.aiSpec, 'Copied AI Spec!');
+      }
+    });
+
+    btnCopyStyle.addEventListener('click', () => {
+      if (currentData) {
+        const text = currentStyleMode === 'css' ? currentData.css : currentData.reactNative;
+        copyText(text, `Copied ${currentStyleMode === 'css' ? 'CSS' : 'React Native'} styles!`);
+      }
+    });
+
+    btnCopyAllSvgs.addEventListener('click', () => {
+      if (currentData && currentData.assets) {
+        const json = JSON.stringify(currentData.assets, null, 2);
+        copyText(json, 'Copied all SVGs dictionary!');
+      }
+    });
+
+    btnRefresh.addEventListener('click', () => {
+      parent.postMessage({ pluginMessage: { type: 'extract' } }, '*');
+    });
+
+    // Listen to messages from plugin code.ts
+    window.onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+      if (!msg) return;
+
+      if (msg.type === 'loading') {
+        emptyState.style.display = 'flex';
+        emptyIcon.textContent = '⏳';
+        emptyTitle.textContent = 'Extracting Design Tokens...';
+        emptyDesc.textContent = msg.message || 'Traversing children and rendering SVGs...';
+        Object.values(tabPanes).forEach((p) => p.classList.remove('active'));
+      } else if (msg.type === 'empty-selection') {
+        currentData = null;
+        emptyState.style.display = 'flex';
+        emptyIcon.textContent = '🎯';
+        emptyTitle.textContent = 'Select a Frame or Screen';
+        emptyDesc.textContent = msg.message || 'Select any layer in Figma to extract styles.';
+        metaTarget.textContent = 'No selection';
+        badgeCount.textContent = '0 SVGs';
+        Object.values(tabPanes).forEach((p) => p.classList.remove('active'));
+      } else if (msg.type === 'extraction-complete') {
+        currentData = msg.data;
+        emptyState.style.display = 'none';
+
+        // Restore active tab
+        const activeTabBtn = document.querySelector('.tab-btn.active');
+        const activeTabId = activeTabBtn ? activeTabBtn.getAttribute('data-tab') : 'tab-ai';
+        tabPanes[activeTabId].classList.add('active');
+
+        // Populate metadata
+        metaTarget.textContent = `${currentData.rootName} (${currentData.width} × ${currentData.height}px)`;
+        badgeCount.textContent = `${currentData.totalAssets} SVGs`;
+
+        // Populate tabs
+        codeAi.textContent = currentData.aiSpec;
+        updateStyleCode();
+        renderAssets(currentData.assets);
+      }
+    };
+  </script>
+</body>
+</html>

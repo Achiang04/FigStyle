@@ -1,0 +1,26 @@
+{
+  "name": "fig-deep-styles",
+  "version": "1.0.0",
+  "description": "Figma plugin to recursively extract complete layout styles, typography, and SVG assets in 1 click for AI coding agents and developers.",
+  "main": "dist/code.js",
+  "scripts": {
+    "build": "node build.js",
+    "watch": "node build.js --watch"
+  },
+  "keywords": [
+    "figma",
+    "figma-plugin",
+    "ai",
+    "css",
+    "react-native",
+    "styles",
+    "svg"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.106.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.2"
+  }
+}
