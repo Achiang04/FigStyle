@@ -880,10 +880,7 @@ function generateAiSpec(root: ExtractedNode, assets: AssetMap): string {
     }
 
     if (Object.keys(node.styles).length > 0) {
-      item.styles = { ...node.styles };
-      if (!item.styles.border && (item.styles.borderRadius !== undefined || item.styles.backgroundColor)) {
-        item.styles.border = "none";
-      }
+      item.styles = node.styles;
     }
 
     if (node.typography) {
@@ -908,64 +905,6 @@ function generateAiSpec(root: ExtractedNode, assets: AssetMap): string {
 
   const aiTree = pruneNodeForAi(root);
 
-  // Collect color palette across tree
-  const backgroundColors = new Map<string, string[]>();
-  const textColors = new Map<string, string[]>();
-  const borderColors = new Map<string, string[]>();
-
-  function collectPalette(node: ExtractedNode) {
-    if (node.styles?.backgroundColor && !node.styles.backgroundColor.startsWith("[")) {
-      const bg = node.styles.backgroundColor;
-      const list = backgroundColors.get(bg) || [];
-      if (!list.includes(node.name)) list.push(node.name);
-      backgroundColors.set(bg, list);
-    }
-    if (node.styles?.border && node.styles.border !== "none") {
-      const b = node.styles.border;
-      const list = borderColors.get(b) || [];
-      if (!list.includes(node.name)) list.push(node.name);
-      borderColors.set(b, list);
-    }
-    if (node.typography?.segments) {
-      for (const seg of node.typography.segments) {
-        if (seg.color && seg.color !== "inherit") {
-          const list = textColors.get(seg.color) || [];
-          if (!list.includes(node.name)) list.push(node.name);
-          textColors.set(seg.color, list);
-        }
-      }
-    }
-    if (node.children) {
-      for (const child of node.children) collectPalette(child);
-    }
-  }
-  collectPalette(root);
-
-  let paletteSection = "";
-  if (backgroundColors.size > 0 || textColors.size > 0 || borderColors.size > 0) {
-    paletteSection += "--- \n#### COLOR PALETTE (EXACT VALUES - USE DIRECTLY, DO NOT GUESS TOKENS):\n";
-    if (backgroundColors.size > 0) {
-      paletteSection += "- **Background Colors**:\n";
-      for (const [color, layers] of backgroundColors.entries()) {
-        paletteSection += `  - \`${color}\` -> Used by: ${layers.slice(0, 4).join(", ")}\n`;
-      }
-    }
-    if (textColors.size > 0) {
-      paletteSection += "- **Text Colors**:\n";
-      for (const [color, layers] of textColors.entries()) {
-        const isWhite = color.toUpperCase() === "#FFFFFF" || color.toUpperCase() === "#FFF";
-        const note = isWhite ? " (WHITE TEXT - Container MUST have solid background applied!)" : "";
-        paletteSection += `  - \`${color}\`${note} -> Used by: ${layers.slice(0, 4).join(", ")}\n`;
-      }
-    }
-    if (borderColors.size > 0) {
-      paletteSection += "- **Borders**:\n";
-      for (const [border, layers] of borderColors.entries()) {
-        paletteSection += `  - \`${border}\` -> Used by: ${layers.slice(0, 4).join(", ")}\n`;
-      }
-    }
-  }
-
   const assetList: { [key: string]: any } = {};
   for (const [key, val] of Object.entries(assets)) {
     if (val.type === "image") {
@@ -986,23 +925,10 @@ function generateAiSpec(root: ExtractedNode, assets: AssetMap): string {
 
   const totalAssetsCount = Object.keys(assets).length;
   const aiPrompt = `### FIGMA DESIGN SPECIFICATION (PIXEL-PERFECT IMPLEMENTATION)
-Use this exact hierarchical spec and assets to build or update the component/screen.
+Use this exact hierarchical spec and assets to build the component/screen.
 DO NOT guess spacing, font sizes, or colors. Use the exact values below.
 For all icons and assets, render the provided raw SVG code or image data URI directly.
 
----
-### ⚠️ CRITICAL COLOR & BUTTON RULES (DO NOT IGNORE):
-1. **EXACT BACKGROUND COLORS (MANDATORY)**:
-   - For every element with \`styles.backgroundColor\` (buttons, badges, cards), you MUST apply that exact hex color directly (e.g. \`backgroundColor: "#695138"\` or \`"#3E92FF"\`).
-   - DO NOT guess or invent theme token names (e.g. \`theme.colors.brownDark\` or \`theme.colors.brandBlue\`) that may evaluate to \`undefined\` at runtime! If a verified theme token does not exist, use the raw hex string directly.
-   - NEVER let buttons or containers with dark backgrounds default to white or transparent, as this makes white text (\`#FFFFFF\`) completely invisible!
-2. **BUTTONS & BORDERS**:
-   - If \`styles.border\` is \`"none"\` or omitted, do NOT add a border.
-   - DO NOT map solid colored buttons to generic library variants (like \`variant="white"\` or \`variant="outlined"\`) that override the specified background color.
-3. **TEXT CONTRAST & VISIBILITY**:
-   - Ensure text color (\`typography.segments[].color\`) is applied. If text is white (\`#FFFFFF\`), ensure its parent container has its solid background color applied.
-
-${paletteSection}
 ---
 #### 1. SCREEN HIERARCHY & STYLES (JSON Tree)
 \`\`\`json
