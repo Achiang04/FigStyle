@@ -1,6 +1,6 @@
-# Goal: Build a Free Figma Plugin: "fig-deep-styles"
+# Goal: Build a Free Figma Plugin: "fig-styles"
 
-I need you to build a complete, production-ready local Figma plugin called **"fig-deep-styles"** (TypeScript + HTML/CSS UI).
+I need you to build a complete, production-ready local Figma plugin called **"FigStyles"** (TypeScript + HTML/CSS UI).
 
 ## Problem Background
 

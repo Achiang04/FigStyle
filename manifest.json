@@ -1,6 +1,6 @@
 {
-  "name": "FigDeepStyles - AI & CSS Extractor",
-  "id": "fig-deep-styles",
+  "name": "FigStyles - AI & CSS Extractor",
+  "id": "fig-styles",
   "api": "1.0.0",
   "main": "dist/code.js",
   "ui": "dist/ui.html",

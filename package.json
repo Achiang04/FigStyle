@@ -1,5 +1,5 @@
 {
-  "name": "fig-deep-styles",
+  "name": "fig-styles",
   "version": "1.0.0",
   "description": "Figma plugin to recursively extract complete layout styles, typography, and SVG assets in 1 click for AI coding agents and developers.",
   "main": "dist/code.js",

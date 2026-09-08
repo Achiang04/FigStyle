@@ -1,9 +1,9 @@
-# FigDeepStyles 🚀
+# FigStyles 🚀
 > **1-Click Deep Design Spec, Styles, and SVG Asset Extractor for Figma & AI Coding Agents**
 
 When you copy CSS in Figma natively, it only copies the outermost parent node, ignoring all child wrappers, typography, padding/gaps, and vector icons. 
 
-**FigDeepStyles** solves this by recursively traversing the selected screen, extracting exact AutoLayout spacing tokens, rich typography segments, and exporting raw `<svg>` code for all vector icons on the screen in **one single copy action**.
+**FigStyles** solves this by recursively traversing the selected screen, extracting exact AutoLayout spacing tokens, rich typography segments, and exporting raw `<svg>` code for all vector icons on the screen in **one single copy action**.
 
 ---
 
@@ -38,14 +38,14 @@ When you copy CSS in Figma natively, it only copies the outermost parent node, i
    /Users/jecky/Documents/Code/FigStyle/manifest.json
    ```
 4. Select `manifest.json` and click **Open**.
-5. FigDeepStyles is now installed in your Figma Desktop!
+5. FigStyles is now installed in your Figma Desktop!
 
 ---
 
 ## 💻 How to Use With Your AI Agent
 
 1. In Figma, select any **Screen**, **Frame**, or **Component**.
-2. Run the plugin (**Plugins ➔ Development ➔ FigDeepStyles**).
+2. Run the plugin (**Plugins ➔ Development ➔ FigStyles**).
 3. Click the primary button: **"Copy AI Spec"**.
 4. In your AI agent chat prompt, simply paste the copied text:
    > *"Build this screen in React / React Native. Here is the screenshot (attached) and here is the exact Figma Design Spec & SVGs: [PASTE]"*
@@ -68,4 +68,4 @@ npm run build
 npm run watch
 ```
 
-In Figma, right-click canvas ➔ **Plugins** ➔ **Development** ➔ **FigDeepStyles** (or hit `Option + Cmd + P` to re-run the last plugin).
+In Figma, right-click canvas ➔ **Plugins** ➔ **Development** ➔ **FigStyles** (or hit `Option + Cmd + P` to re-run the last plugin).
