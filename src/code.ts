@@ -75,13 +75,17 @@ interface ExtractedNode {
   children?: ExtractedNode[];
 }
 
+interface ExtractedAsset {
+  name: string;
+  type: "vector" | "image";
+  width: number;
+  height: number;
+  svg: string;
+  dataUri?: string;
+}
+
 interface AssetMap {
-  [key: string]: {
-    name: string;
-    width: number;
-    height: number;
-    svg: string;
-  };
+  [key: string]: ExtractedAsset;
 }
 
 // Convert Figma float RGB(0..1) to Hex
@@ -162,8 +166,100 @@ function mapFontWeight(style: string): string | number {
   return 400;
 }
 
-// Check if node is an icon or vector asset container
-function isIconOrVector(node: SceneNode): boolean {
+// Safe UTF-8 decoding without relying on TextDecoder (which does not exist in QuickJS)
+function uint8ArrayToUtf8String(bytes: Uint8Array): string {
+  if (typeof TextDecoder !== "undefined") {
+    try {
+      return new TextDecoder("utf-8").decode(bytes);
+    } catch (_) {}
+  }
+
+  let out = "";
+  let i = 0;
+  const len = bytes.length;
+  while (i < len) {
+    const c = bytes[i++];
+    if (c < 128) {
+      out += String.fromCharCode(c);
+    } else if (c > 191 && c < 224) {
+      out += String.fromCharCode(((c & 31) << 6) | (bytes[i++] & 63));
+    } else if (c > 223 && c < 240) {
+      out += String.fromCharCode(
+        ((c & 15) << 12) | ((bytes[i++] & 63) << 6) | (bytes[i++] & 63)
+      );
+    } else if (c > 239 && c < 365) {
+      const u =
+        (((c & 7) << 18) |
+          ((bytes[i++] & 63) << 12) |
+          ((bytes[i++] & 63) << 6) |
+          (bytes[i++] & 63)) -
+        0x10000;
+      out += String.fromCharCode(0xd800 + (u >> 10), 0xdc00 + (u & 0x3ff));
+    }
+  }
+  return out;
+}
+
+// Timeout helper to guarantee async export calls never hang the plugin
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
+// Check if a node has any TEXT descendants with depth limit for performance
+function hasTextDescendants(node: SceneNode, maxDepth = 6): boolean {
+  if (node.type === "TEXT") return true;
+  if (maxDepth <= 0) return false;
+  if ("children" in node && Array.isArray(node.children)) {
+    for (const child of node.children) {
+      if (hasTextDescendants(child, maxDepth - 1)) return true;
+    }
+  }
+  return false;
+}
+
+// Check if a node has visible IMAGE fills
+function hasImageFill(node: SceneNode): boolean {
+  if ("fills" in node && Array.isArray(node.fills)) {
+    return (node.fills as ReadonlyArray<Paint>).some(
+      (f) => f.type === "IMAGE" && f.visible !== false
+    );
+  }
+  return false;
+}
+
+const ICON_OR_ASSET_KEYWORDS = [
+  "icon", "ic_", "ic-", "arrow", "chevron", "caret", "logo", "badge", "btn-icon",
+  "close", "cancel", "dismiss", "cross", "search", "magnif", "star", "edit", "pencil",
+  "pen", "clock", "time", "schedule", "history", "phone", "call", "whatsapp", "wa",
+  "shield", "protect", "safety", "security", "location", "pin", "map", "gps", "marker",
+  "home", "activity", "activities", "youth", "mochi", "sparkle", "sparkles", "calendar",
+  "mail", "email", "chat", "message", "send", "check", "tick", "plus", "add", "minus",
+  "trash", "delete", "bin", "filter", "sort", "settings", "setting", "gear", "cog",
+  "bell", "notification", "heart", "favorite", "like", "share", "info", "help", "alert",
+  "warning", "camera", "refresh", "reload", "sync", "upload", "download", "back", "next",
+  "forward", "left", "right", "up", "down", "tab", "nav", "menu", "dots", "more", "eye",
+  "lock", "unlock", "illustration", "graphic", "mascot", "character", "artwork", "banner",
+  "avatar", "thumb", "ava", "pic", "image", "img", "photo"
+];
+
+const ICON_LIBRARY_PREFIXES = [
+  "lucide:", "mingcute:", "fluent:", "ph:", "heroicons:", "heroicon:", "tabler:",
+  "feather:", "akar-icons:", "bx:", "bxs:", "carbon:", "ant-design:", "solar:",
+  "ri:", "material:", "mdi:", "eva:", "akar:"
+];
+
+// Check if node is an icon or vector / graphic asset container
+function isIconOrAsset(node: SceneNode, isRoot: boolean): boolean {
+  if (node.type === "DOCUMENT" || node.type === "PAGE") return false;
+  if (node.type === "TEXT") return false;
+
+  // Root screen frames/artboards should not be treated as assets
+  if (isRoot && (node.width > 140 || node.height > 140)) return false;
+
+  // 1. Direct vector shapes
   if (
     node.type === "VECTOR" ||
     node.type === "BOOLEAN_OPERATION" ||
@@ -174,69 +270,103 @@ function isIconOrVector(node: SceneNode): boolean {
     return true;
   }
 
-  // Small frames/components frequently used as icons
+  // 2. Node has an image fill and no text inside (e.g. avatar, photo, illustration)
+  if (hasImageFill(node) && !hasTextDescendants(node, 4)) {
+    return true;
+  }
+
+  // 3. Containers: FRAME, GROUP, COMPONENT, INSTANCE
   if (
     node.type === "FRAME" ||
     node.type === "GROUP" ||
     node.type === "COMPONENT" ||
     node.type === "INSTANCE"
   ) {
-    const isSmall = node.width <= 64 && node.height <= 64;
-    const nameLower = node.name.toLowerCase();
-    const hasIconName =
-      nameLower.includes("icon") ||
-      nameLower.includes("ic_") ||
-      nameLower.includes("ic-") ||
-      nameLower.includes("arrow") ||
-      nameLower.includes("chevron") ||
-      nameLower.includes("logo") ||
-      nameLower.includes("badge") ||
-      nameLower.includes("btn-icon") ||
-      nameLower.includes("close") ||
-      nameLower.includes("search") ||
-      nameLower.includes("avatar") ||
-      nameLower.includes("star");
+    // If it contains text, it is a UI container (button, card, header), not an icon/asset
+    if (hasTextDescendants(node, 6)) {
+      return false;
+    }
 
-    // Has vector children only
-    if ("children" in node && node.children.length > 0) {
-      const allVectorChildren = node.children.every(
-        (c) =>
-          c.type === "VECTOR" ||
-          c.type === "BOOLEAN_OPERATION" ||
-          c.type === "GROUP" ||
-          c.type === "LINE" ||
-          c.type === "ELLIPSE" ||
-          c.type === "RECTANGLE"
-      );
-      if (isSmall && (hasIconName || allVectorChildren)) {
-        return true;
-      }
+    const nameLower = node.name.toLowerCase();
+
+    // Check known icon library prefixes (e.g. lucide:home, mingcute:time-line)
+    const hasPrefix = ICON_LIBRARY_PREFIXES.some((p) => nameLower.startsWith(p));
+    if (hasPrefix && node.width <= 140 && node.height <= 140) {
+      return true;
+    }
+
+    // Check icon / graphic keywords
+    const matchesKeyword = ICON_OR_ASSET_KEYWORDS.some((kw) =>
+      nameLower.includes(kw)
+    );
+    if (matchesKeyword && node.width <= 260 && node.height <= 260) {
+      return true;
+    }
+
+    // Small graphic containers <= 48x48 with no text are almost universally icons/indicators
+    if (node.width <= 48 && node.height <= 48) {
+      return true;
+    }
+
+    // Containers up to 72x72 where width == height (square icon containers)
+    if (node.width <= 72 && node.height <= 72 && Math.abs(node.width - node.height) <= 4) {
+      return true;
     }
   }
 
   return false;
 }
 
-// Extract and export SVG
+// Extract and export SVG (with timeout protection so Figma never freezes)
 async function exportNodeToSvg(node: SceneNode): Promise<string | null> {
-  try {
-    const svgBytes = await node.exportAsync({
-      format: "SVG",
-      svgIdAttribute: false,
-      svgOutlineText: false,
-    });
-    return new TextDecoder("utf-8").decode(svgBytes);
-  } catch (e) {
-    console.warn(`Failed to export SVG for node ${node.name}:`, e);
+  const exportTask = (async () => {
+    // Method 1: Try SVG_STRING directly (fastest, standard in modern Figma Plugin API)
+    try {
+      const svgString = await (node as any).exportAsync({
+        format: "SVG_STRING",
+        svgIdAttribute: false,
+        svgOutlineText: false,
+        svgSimplifyStroke: true,
+      });
+      if (typeof svgString === "string" && svgString.trim().length > 0) {
+        return svgString;
+      }
+    } catch (_) {}
+
+    // Method 2: Basic SVG_STRING without extra options
+    try {
+      const svgString = await (node as any).exportAsync({
+        format: "SVG_STRING",
+      });
+      if (typeof svgString === "string" && svgString.trim().length > 0) {
+        return svgString;
+      }
+    } catch (_) {}
+
+    // Method 3: Binary SVG with safe decoding (no TextDecoder dependency)
+    try {
+      const bytes: Uint8Array = await node.exportAsync({
+        format: "SVG",
+      });
+      if (bytes && bytes.length > 0) {
+        return uint8ArrayToUtf8String(bytes);
+      }
+    } catch (e3) {
+      console.warn(`Failed to export SVG for node ${node.name}:`, e3);
+    }
+
     return null;
-  }
+  })();
+
+  return withTimeout(exportTask, 2500, null);
 }
 
 // Recursively traverse scene nodes
 async function processNode(
   node: SceneNode,
   assets: AssetMap,
-  options: { includeHidden?: boolean; maxSvgCount?: number }
+  options: { includeHidden?: boolean; maxSvgCount?: number },
+  isRoot: boolean = true
 ): Promise<ExtractedNode | null> {
   if (!options.includeHidden && !node.visible) {
     return null;
@@ -254,27 +384,48 @@ async function processNode(
     styles: {},
   };
 
-  // Check if this node is an icon/vector asset
-  const isAsset = isIconOrVector(node);
-  if (isAsset && Object.keys(assets).length < (options.maxSvgCount || 50)) {
+  const isImg = hasImageFill(node);
+  const isAsset = isIconOrAsset(node, isRoot);
+
+  // Check if this node is an icon/vector/image asset container
+  if (isAsset && Object.keys(assets).length < (options.maxSvgCount || 60)) {
     const assetKey = `${cleanName}-${node.id.replace(/[^a-zA-Z0-9]/g, "")}`;
-    const svgCode = await exportNodeToSvg(node);
+    let svgCode: string | null = null;
+
+    if (!isImg) {
+      // Vector icon: export real SVG
+      svgCode = await exportNodeToSvg(node);
+    } else {
+      // Image / Avatar asset: Lightweight SVG placeholder (prevents 20MB raw photo base64 strings)
+      const radius = Math.round(node.width <= 64 ? node.width / 2 : 6);
+      svgCode = `<svg width="${Math.round(node.width)}" height="${Math.round(node.height)}" viewBox="0 0 ${Math.round(node.width)} ${Math.round(node.height)}" fill="none"><rect width="100%" height="100%" rx="${radius}" fill="#E2E8F0"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="10" font-weight="600" fill="#64748B">IMAGE</text></svg>`;
+    }
+
     if (svgCode) {
+      // Safety guard: if an SVG is ever > 20KB, it's an embedded raster; replace with lightweight graphic
+      if (svgCode.length > 20000) {
+        svgCode = `<svg width="${Math.round(node.width)}" height="${Math.round(node.height)}" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>`;
+      }
+
       assets[assetKey] = {
         name: node.name,
+        type: isImg ? "image" : "vector",
         width: Math.round(node.width),
         height: Math.round(node.height),
         svg: svgCode,
       };
       extracted.assetKey = assetKey;
-      // If it's an exported icon container, we don't need to recursively inspect children
+      if (isImg) {
+        extracted.styles.backgroundColor = `[Image Asset: ${node.name}]`;
+      }
+      // If it's an exported asset container, we do not need to recursively inspect children
       return extracted;
     }
   }
 
   // Fills (background & color)
   if ("fills" in node && Array.isArray(node.fills) && node.fills.length > 0) {
-    const visibleFills = node.fills.filter((f) => f.visible !== false);
+    const visibleFills = (node.fills as ReadonlyArray<Paint>).filter((f) => f.visible !== false);
     for (const fill of visibleFills) {
       if (fill.type === "SOLID") {
         extracted.styles.backgroundColor = paintToColorString(fill);
@@ -475,7 +626,7 @@ async function processNode(
   if ("children" in node && Array.isArray(node.children)) {
     extracted.children = [];
     for (const child of node.children) {
-      const processedChild = await processNode(child, assets, options);
+      const processedChild = await processNode(child, assets, options, false);
       if (processedChild) {
         extracted.children.push(processedChild);
       }
@@ -496,7 +647,12 @@ function generateAiSpec(root: ExtractedNode, assets: AssetMap): string {
     };
 
     if (node.assetKey) {
-      item.iconAssetKey = node.assetKey;
+      const asset = assets[node.assetKey];
+      if (asset && asset.type === "image") {
+        item.imageAssetKey = node.assetKey;
+      } else {
+        item.iconAssetKey = node.assetKey;
+      }
       return item;
     }
 
@@ -537,15 +693,26 @@ function generateAiSpec(root: ExtractedNode, assets: AssetMap): string {
 
   const aiTree = pruneNodeForAi(root);
 
-  const assetList: { [key: string]: string } = {};
+  const assetList: { [key: string]: any } = {};
   for (const [key, val] of Object.entries(assets)) {
-    assetList[key] = val.svg;
+    if (val.type === "image") {
+      assetList[key] = {
+        type: "image",
+        name: val.name,
+        width: val.width,
+        height: val.height,
+        renderAs: `<Image source={{ uri: "placeholder" }} style={{ width: ${val.width}, height: ${val.height} }} />`,
+      };
+    } else {
+      assetList[key] = val.svg;
+    }
   }
 
+  const totalAssetsCount = Object.keys(assets).length;
   const aiPrompt = `### FIGMA DESIGN SPECIFICATION (PIXEL-PERFECT IMPLEMENTATION)
 Use this exact hierarchical spec and assets to build the component/screen.
 DO NOT guess spacing, font sizes, or colors. Use the exact values below.
-For all icons, render the provided raw SVG code directly.
+For all icons and assets, render the provided raw SVG code or image data URI directly.
 
 ---
 #### 1. SCREEN HIERARCHY & STYLES (JSON Tree)
@@ -554,10 +721,10 @@ ${JSON.stringify(aiTree, null, 2)}
 \`\`\`
 
 ---
-#### 2. EXTRACTED SVG ICONS & ASSETS (${Object.keys(assets).length} found)
+#### 2. EXTRACTED SVG ICONS & ASSETS (${totalAssetsCount} found)
 ${
-  Object.keys(assets).length === 0
-    ? "_No vector icons found in selection._"
+  totalAssetsCount === 0
+    ? "_No vector icons or image assets found in selection._"
     : `\`\`\`json\n${JSON.stringify(assetList, null, 2)}\n\`\`\``
 }
 `;
@@ -812,61 +979,73 @@ function generateReactNative(root: ExtractedNode): string {
 
 // Main execution function when selection changes or extract is requested
 async function extractCurrentSelection(options: any = {}) {
-  const selection = figma.currentPage.selection;
-  if (!selection || selection.length === 0) {
-    figma.ui.postMessage({
-      type: "empty-selection",
-      message: "Please select a Frame, Screen, or Component on the canvas.",
-    });
-    return;
-  }
-
-  figma.ui.postMessage({
-    type: "loading",
-    message: `Scanning ${selection.length} selected layer(s)...`,
-  });
-
-  const assets: AssetMap = {};
-  const extractedNodes: ExtractedNode[] = [];
-
-  for (const node of selection) {
-    const extracted = await processNode(node, assets, {
-      includeHidden: options.includeHidden || false,
-      maxSvgCount: options.maxSvgCount || 60,
-    });
-    if (extracted) {
-      extractedNodes.push(extracted);
+  try {
+    const selection = figma.currentPage.selection;
+    if (!selection || selection.length === 0) {
+      figma.ui.postMessage({
+        type: "empty-selection",
+        message: "Please select a Frame, Screen, or Component on the canvas.",
+      });
+      return;
     }
-  }
 
-  if (extractedNodes.length === 0) {
+    figma.ui.postMessage({
+      type: "loading",
+      message: `Scanning ${selection.length} selected layer(s)...`,
+    });
+
+    const assets: AssetMap = {};
+    const extractedNodes: ExtractedNode[] = [];
+
+    for (const node of selection) {
+      const extracted = await processNode(
+        node,
+        assets,
+        {
+          includeHidden: options.includeHidden || false,
+          maxSvgCount: options.maxSvgCount || 60,
+        },
+        true
+      );
+      if (extracted) {
+        extractedNodes.push(extracted);
+      }
+    }
+
+    if (extractedNodes.length === 0) {
+      figma.ui.postMessage({
+        type: "empty-selection",
+        message: "No visible layers found in selection.",
+      });
+      return;
+    }
+
+    const root = extractedNodes[0];
+    const aiSpec = generateAiSpec(root, assets);
+    const css = generateCss(root);
+    const reactNative = generateReactNative(root);
+
+    figma.ui.postMessage({
+      type: "extraction-complete",
+      data: {
+        rootName: root.name,
+        nodeType: root.type,
+        width: root.width,
+        height: root.height,
+        totalAssets: Object.keys(assets).length,
+        aiSpec,
+        css,
+        reactNative,
+        assets,
+      },
+    });
+  } catch (err: any) {
+    console.error("Extraction error:", err);
     figma.ui.postMessage({
       type: "empty-selection",
-      message: "No visible layers found in selection.",
+      message: `Extraction error: ${err?.message || String(err)}`,
     });
-    return;
   }
-
-  const root = extractedNodes[0];
-  const aiSpec = generateAiSpec(root, assets);
-  const css = generateCss(root);
-  const reactNative = generateReactNative(root);
-
-  figma.ui.postMessage({
-    type: "extraction-complete",
-    data: {
-      rootName: root.name,
-      nodeType: root.type,
-      width: root.width,
-      height: root.height,
-      totalAssets: Object.keys(assets).length,
-      aiSpec,
-      css,
-      reactNative,
-      assets,
-      tree: root,
-    },
-  });
 }
 
 // Initial run on startup
