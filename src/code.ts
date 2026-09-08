@@ -57,6 +57,12 @@ interface ExtractedNode {
     verticalSizing: string;
     isAbsolute: boolean;
   };
+  absolutePosition?: {
+    top?: number;
+    left?: number;
+    right?: number;
+    bottom?: number;
+  };
   styles: {
     backgroundColor?: string;
     gradient?: string;
@@ -200,6 +206,32 @@ function uint8ArrayToUtf8String(bytes: Uint8Array): string {
   return out;
 }
 
+// Convert Uint8Array to base64 string safely across all JS runtimes (including QuickJS)
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let base64 = "";
+  const len = bytes.length;
+  for (let i = 0; i < len; i += 3) {
+    const b1 = bytes[i];
+    const b2 = i + 1 < len ? bytes[i + 1] : 0;
+    const b3 = i + 2 < len ? bytes[i + 2] : 0;
+
+    const enc1 = b1 >> 2;
+    const enc2 = ((b1 & 3) << 4) | (b2 >> 4);
+    const enc3 = ((b2 & 15) << 2) | (b3 >> 6);
+    const enc4 = b3 & 63;
+
+    if (i + 1 >= len) {
+      base64 += chars.charAt(enc1) + chars.charAt(enc2) + "==";
+    } else if (i + 2 >= len) {
+      base64 += chars.charAt(enc1) + chars.charAt(enc2) + chars.charAt(enc3) + "=";
+    } else {
+      base64 += chars.charAt(enc1) + chars.charAt(enc2) + chars.charAt(enc3) + chars.charAt(enc4);
+    }
+  }
+  return base64;
+}
+
 // Timeout helper to guarantee async export calls never hang the plugin
 function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   return Promise.race([
@@ -230,19 +262,35 @@ function hasImageFill(node: SceneNode): boolean {
   return false;
 }
 
-const ICON_OR_ASSET_KEYWORDS = [
+// Collection / list keywords - these indicate a container of items rather than a single asset
+const COLLECTION_CONTAINER_KEYWORDS = [
+  "list", "group", "stack", "row", "col", "column", "grid", "collection", "container",
+  "wrapper", "content", "items", "cards", "avatars", "icons"
+];
+
+// Keywords indicating standalone illustration or artwork (can be up to 700px)
+const ILLUSTRATION_KEYWORDS = [
+  "illustration", "illustrations", "illust", "graphic", "mascot", "character",
+  "artwork", "banner", "doodle", "drawing", "scene"
+];
+
+// Single image asset keywords (e.g. avatar photos)
+const IMAGE_ASSET_KEYWORDS = [
+  "avatar", "thumb", "ava", "pic", "photo", "profile"
+];
+
+// Vector icon keywords (typically <= 160px)
+const ICON_KEYWORDS = [
   "icon", "ic_", "ic-", "arrow", "chevron", "caret", "logo", "badge", "btn-icon",
   "close", "cancel", "dismiss", "cross", "search", "magnif", "star", "edit", "pencil",
   "pen", "clock", "time", "schedule", "history", "phone", "call", "whatsapp", "wa",
   "shield", "protect", "safety", "security", "location", "pin", "map", "gps", "marker",
-  "home", "activity", "activities", "youth", "mochi", "sparkle", "sparkles", "calendar",
-  "mail", "email", "chat", "message", "send", "check", "tick", "plus", "add", "minus",
-  "trash", "delete", "bin", "filter", "sort", "settings", "setting", "gear", "cog",
-  "bell", "notification", "heart", "favorite", "like", "share", "info", "help", "alert",
-  "warning", "camera", "refresh", "reload", "sync", "upload", "download", "back", "next",
-  "forward", "left", "right", "up", "down", "tab", "nav", "menu", "dots", "more", "eye",
-  "lock", "unlock", "illustration", "graphic", "mascot", "character", "artwork", "banner",
-  "avatar", "thumb", "ava", "pic", "image", "img", "photo"
+  "sparkle", "sparkles", "calendar", "mail", "email", "chat", "message", "send", "check",
+  "tick", "plus", "add", "minus", "trash", "delete", "bin", "filter", "sort", "settings",
+  "setting", "gear", "cog", "bell", "notification", "heart", "favorite", "like", "share",
+  "info", "help", "alert", "warning", "camera", "refresh", "reload", "sync", "upload",
+  "download", "back", "next", "forward", "tab", "nav", "menu", "dots", "more", "eye",
+  "lock", "unlock"
 ];
 
 const ICON_LIBRARY_PREFIXES = [
@@ -250,6 +298,43 @@ const ICON_LIBRARY_PREFIXES = [
   "feather:", "akar-icons:", "bx:", "bxs:", "carbon:", "ant-design:", "solar:",
   "ri:", "material:", "mdi:", "eva:", "akar:"
 ];
+
+// Check if a container represents a collection of avatars (e.g. Avatar List, Avatar Row)
+function isAvatarCollection(node: SceneNode): boolean {
+  const nameLower = node.name.toLowerCase();
+
+  // If explicitly named an illustration/graphic/artwork, it is NEVER an avatar collection
+  if (ILLUSTRATION_KEYWORDS.some((kw) => nameLower.includes(kw))) {
+    return false;
+  }
+
+  const isNamedAvatar =
+    nameLower.includes("avatar") ||
+    nameLower.includes("user") ||
+    nameLower.includes("profile") ||
+    nameLower.includes("member");
+
+  const isCollectionWord =
+    COLLECTION_CONTAINER_KEYWORDS.some((kw) => nameLower.includes(kw)) ||
+    nameLower.endsWith("s");
+
+  if (isNamedAvatar && isCollectionWord) return true;
+
+  if ("children" in node && Array.isArray(node.children) && node.children.length > 1) {
+    const isAutoLayout =
+      "layoutMode" in node &&
+      ((node as FrameNode).layoutMode === "HORIZONTAL" ||
+        (node as FrameNode).layoutMode === "VERTICAL");
+
+    // If an AutoLayout flex row contains 2 or more image children, it is an avatar row/collection
+    if (isAutoLayout) {
+      const imageChildrenCount = (node as any).children.filter((c: SceneNode) => hasImageFill(c)).length;
+      if (imageChildrenCount >= 2) return true;
+    }
+  }
+
+  return false;
+}
 
 // Check if node is an icon or vector / graphic asset container
 function isIconOrAsset(node: SceneNode, isRoot: boolean): boolean {
@@ -259,7 +344,41 @@ function isIconOrAsset(node: SceneNode, isRoot: boolean): boolean {
   // Root screen frames/artboards should not be treated as assets
   if (isRoot && (node.width > 140 || node.height > 140)) return false;
 
-  // 1. Direct vector shapes
+  // If it contains text, it is a UI container (button, card, header), not an atomic graphic asset
+  if (hasTextDescendants(node, 6)) {
+    return false;
+  }
+
+  const nameLower = node.name.toLowerCase();
+
+  // 1. If this is an Avatar List / group container, DO NOT collapse it into a single SVG!
+  // Keep the container layout and let individual avatar children be extracted.
+  if (isAvatarCollection(node)) {
+    return false;
+  }
+
+  // 2. Standalone Illustrations & Artwork:
+  // If the container is named as an illustration/graphic/artwork, ALWAYS keep it as 1 complete asset!
+  const matchesIllustration = ILLUSTRATION_KEYWORDS.some((kw) => nameLower.includes(kw));
+  if (matchesIllustration && node.width <= 700 && node.height <= 700) {
+    return true;
+  }
+
+  // 3. Known icon library prefixes (e.g. lucide:home, mingcute:time-line)
+  const hasPrefix = ICON_LIBRARY_PREFIXES.some((p) => nameLower.startsWith(p));
+  if (hasPrefix && node.width <= 140 && node.height <= 140) {
+    return true;
+  }
+
+  // 4. Single Avatar or Photo leaf element (has image fill and <= 1 child)
+  if (hasImageFill(node)) {
+    const childrenCount = "children" in node && Array.isArray(node.children) ? node.children.length : 0;
+    if (childrenCount <= 1) {
+      return true;
+    }
+  }
+
+  // 5. Direct vector shapes are vector assets
   if (
     node.type === "VECTOR" ||
     node.type === "BOOLEAN_OPERATION" ||
@@ -270,36 +389,40 @@ function isIconOrAsset(node: SceneNode, isRoot: boolean): boolean {
     return true;
   }
 
-  // 2. Node has an image fill and no text inside (e.g. avatar, photo, illustration)
-  if (hasImageFill(node) && !hasTextDescendants(node, 4)) {
-    return true;
-  }
-
-  // 3. Containers: FRAME, GROUP, COMPONENT, INSTANCE
+  // 6. Containers: FRAME, GROUP, COMPONENT, INSTANCE
   if (
     node.type === "FRAME" ||
     node.type === "GROUP" ||
     node.type === "COMPONENT" ||
     node.type === "INSTANCE"
   ) {
-    // If it contains text, it is a UI container (button, card, header), not an icon/asset
-    if (hasTextDescendants(node, 6)) {
-      return false;
-    }
+    const childrenCount = "children" in node && Array.isArray(node.children) ? node.children.length : 0;
 
-    const nameLower = node.name.toLowerCase();
-
-    // Check known icon library prefixes (e.g. lucide:home, mingcute:time-line)
-    const hasPrefix = ICON_LIBRARY_PREFIXES.some((p) => nameLower.startsWith(p));
-    if (hasPrefix && node.width <= 140 && node.height <= 140) {
+    // Figma GROUP with no text is typically an illustration, mascot, or graphic drawing
+    if (node.type === "GROUP" && childrenCount > 0 && node.width <= 700 && node.height <= 700) {
       return true;
     }
 
-    // Check icon / graphic keywords
-    const matchesKeyword = ICON_OR_ASSET_KEYWORDS.some((kw) =>
-      nameLower.includes(kw)
-    );
-    if (matchesKeyword && node.width <= 260 && node.height <= 260) {
+    // Check if container has AutoLayout with multiple items (flex row/col)
+    const isAutoLayoutContainer =
+      "layoutMode" in node &&
+      ((node as FrameNode).layoutMode === "HORIZONTAL" ||
+        (node as FrameNode).layoutMode === "VERTICAL");
+
+    if (isAutoLayoutContainer && childrenCount > 1) {
+      // AutoLayout frames with multiple children are layout containers, not single assets
+      return false;
+    }
+
+    // Check single avatar / photo keywords (e.g. "Avatar", "Photo", "Profile Pic")
+    const matchesImageKw = IMAGE_ASSET_KEYWORDS.some((kw) => nameLower.includes(kw));
+    if (matchesImageKw && childrenCount <= 1 && node.width <= 160 && node.height <= 160) {
+      return true;
+    }
+
+    // Check icon keywords
+    const matchesIconKw = ICON_KEYWORDS.some((kw) => nameLower.includes(kw));
+    if (matchesIconKw && node.width <= 160 && node.height <= 160) {
       return true;
     }
 
@@ -358,7 +481,51 @@ async function exportNodeToSvg(node: SceneNode): Promise<string | null> {
     return null;
   })();
 
-  return withTimeout(exportTask, 2500, null);
+  return withTimeout(exportTask, 6000, null);
+}
+
+// Extract image asset as lightweight PNG & base64 dataUri
+async function exportNodeToImage(
+  node: SceneNode,
+  maxDimension: number = 200
+): Promise<{ dataUri: string; svgPreview: string } | null> {
+  const exportTask = (async () => {
+    try {
+      const maxSide = Math.max(node.width, node.height);
+      const scale = maxSide > maxDimension ? Math.round((maxDimension / maxSide) * 100) / 100 : 1;
+
+      const bytes: Uint8Array = await node.exportAsync({
+        format: "PNG",
+        constraint: {
+          type: "SCALE",
+          value: Math.max(0.2, scale),
+        },
+      });
+
+      if (bytes && bytes.length > 0) {
+        const base64 = uint8ArrayToBase64(bytes);
+        const dataUri = `data:image/png;base64,${base64}`;
+        const w = Math.round(node.width);
+        const h = Math.round(node.height);
+        const radius =
+          "cornerRadius" in node && typeof (node as any).cornerRadius === "number"
+            ? (node as any).cornerRadius
+            : w <= 64
+            ? Math.round(w / 2)
+            : 6;
+
+        // Clean SVG wrapper around the image for SVG preview / fallback
+        const svgPreview = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" fill="none" xmlns="http://www.w3.org/2000/svg"><defs><clipPath id="clip-${node.id.replace(/[^a-zA-Z0-9]/g, "")}"><rect width="${w}" height="${h}" rx="${radius}" /></clipPath></defs><image href="${dataUri}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid slice" clip-path="url(#clip-${node.id.replace(/[^a-zA-Z0-9]/g, "")})" /></svg>`;
+
+        return { dataUri, svgPreview };
+      }
+    } catch (err) {
+      console.warn(`Failed to export image for node ${node.name}:`, err);
+    }
+    return null;
+  })();
+
+  return withTimeout(exportTask, 6000, null);
 }
 
 // Recursively traverse scene nodes
@@ -384,41 +551,69 @@ async function processNode(
     styles: {},
   };
 
+  // Extract absolute positioning coordinates relative to parent
+  const isAbsolute = (node as any).layoutPositioning === "ABSOLUTE";
+  if (isAbsolute && node.parent && "width" in node.parent && "height" in node.parent) {
+    const parentW = (node.parent as any).width || 0;
+    const parentH = (node.parent as any).height || 0;
+    const top = Math.round(node.y);
+    const left = Math.round(node.x);
+    const right = Math.round(parentW - (node.x + node.width));
+    const bottom = Math.round(parentH - (node.y + node.height));
+
+    extracted.absolutePosition = {
+      top,
+      left,
+      right: right >= 0 ? right : undefined,
+      bottom: bottom >= 0 ? bottom : undefined,
+    };
+  }
+
   const isImg = hasImageFill(node);
   const isAsset = isIconOrAsset(node, isRoot);
 
   // Check if this node is an icon/vector/image asset container
-  if (isAsset && Object.keys(assets).length < (options.maxSvgCount || 60)) {
+  if (isAsset && Object.keys(assets).length < (options.maxSvgCount || 80)) {
     const assetKey = `${cleanName}-${node.id.replace(/[^a-zA-Z0-9]/g, "")}`;
     let svgCode: string | null = null;
+    let dataUri: string | undefined = undefined;
 
     if (!isImg) {
-      // Vector icon: export real SVG
+      // Vector icon or illustration: export real SVG
       svgCode = await exportNodeToSvg(node);
+      // Fallback: if SVG export failed on container, try image export
+      if (!svgCode) {
+        const imgRes = await exportNodeToImage(node);
+        if (imgRes) {
+          svgCode = imgRes.svgPreview;
+          dataUri = imgRes.dataUri;
+        }
+      }
     } else {
-      // Image / Avatar asset: Lightweight SVG placeholder (prevents 20MB raw photo base64 strings)
-      const radius = Math.round(node.width <= 64 ? node.width / 2 : 6);
-      svgCode = `<svg width="${Math.round(node.width)}" height="${Math.round(node.height)}" viewBox="0 0 ${Math.round(node.width)} ${Math.round(node.height)}" fill="none"><rect width="100%" height="100%" rx="${radius}" fill="#E2E8F0"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="10" font-weight="600" fill="#64748B">IMAGE</text></svg>`;
+      // Real image / photo / avatar: export crisp PNG & base64 dataUri
+      const imgRes = await exportNodeToImage(node);
+      if (imgRes) {
+        svgCode = imgRes.svgPreview;
+        dataUri = imgRes.dataUri;
+      } else {
+        const radius = Math.round(node.width <= 64 ? node.width / 2 : 6);
+        svgCode = `<svg width="${Math.round(node.width)}" height="${Math.round(node.height)}" viewBox="0 0 ${Math.round(node.width)} ${Math.round(node.height)}" fill="none"><rect width="100%" height="100%" rx="${radius}" fill="#E2E8F0"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="10" font-weight="600" fill="#64748B">IMAGE</text></svg>`;
+      }
     }
 
     if (svgCode) {
-      // Safety guard: if an SVG is ever > 20KB, it's an embedded raster; replace with lightweight graphic
-      if (svgCode.length > 20000) {
-        svgCode = `<svg width="${Math.round(node.width)}" height="${Math.round(node.height)}" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>`;
-      }
-
       assets[assetKey] = {
         name: node.name,
-        type: isImg ? "image" : "vector",
+        type: isImg || dataUri ? "image" : "vector",
         width: Math.round(node.width),
         height: Math.round(node.height),
         svg: svgCode,
+        dataUri,
       };
       extracted.assetKey = assetKey;
-      if (isImg) {
+      if (isImg || dataUri) {
         extracted.styles.backgroundColor = `[Image Asset: ${node.name}]`;
       }
-      // If it's an exported asset container, we do not need to recursively inspect children
       return extracted;
     }
   }
@@ -650,10 +845,20 @@ function generateAiSpec(root: ExtractedNode, assets: AssetMap): string {
       const asset = assets[node.assetKey];
       if (asset && asset.type === "image") {
         item.imageAssetKey = node.assetKey;
+        if (asset.dataUri) {
+          item.dataUri = asset.dataUri;
+        }
       } else {
         item.iconAssetKey = node.assetKey;
       }
+      if (node.absolutePosition) {
+        item.absolutePosition = node.absolutePosition;
+      }
       return item;
+    }
+
+    if (node.absolutePosition) {
+      item.absolutePosition = node.absolutePosition;
     }
 
     if (node.layout && node.layout.mode !== "NONE") {
@@ -701,7 +906,10 @@ function generateAiSpec(root: ExtractedNode, assets: AssetMap): string {
         name: val.name,
         width: val.width,
         height: val.height,
-        renderAs: `<Image source={{ uri: "placeholder" }} style={{ width: ${val.width}, height: ${val.height} }} />`,
+        dataUri: val.dataUri,
+        renderAs: val.dataUri
+          ? `<Image source={{ uri: "${val.dataUri}" }} style={{ width: ${val.width}, height: ${val.height} }} />`
+          : `<Image source={{ uri: "placeholder" }} style={{ width: ${val.width}, height: ${val.height} }} />`,
       };
     } else {
       assetList[key] = val.svg;
@@ -784,8 +992,29 @@ function generateCss(root: ExtractedNode): string {
         }
       }
 
-      if (node.layout.isAbsolute) {
+      if (node.layout?.isAbsolute || node.absolutePosition) {
         rules.push("  position: absolute;");
+        if (node.absolutePosition) {
+          if (typeof node.absolutePosition.top === "number") {
+            rules.push(`  top: ${node.absolutePosition.top}px;`);
+          }
+          if (
+            typeof node.absolutePosition.right === "number" &&
+            typeof node.absolutePosition.left === "number" &&
+            node.absolutePosition.right < node.absolutePosition.left
+          ) {
+            rules.push(`  right: ${node.absolutePosition.right}px;`);
+          } else if (typeof node.absolutePosition.left === "number") {
+            rules.push(`  left: ${node.absolutePosition.left}px;`);
+          }
+          if (
+            typeof node.absolutePosition.bottom === "number" &&
+            typeof node.absolutePosition.top === "number" &&
+            node.absolutePosition.bottom < node.absolutePosition.top
+          ) {
+            rules.push(`  bottom: ${node.absolutePosition.bottom}px;`);
+          }
+        }
       }
     }
 
@@ -806,7 +1035,7 @@ function generateCss(root: ExtractedNode): string {
     }
 
     // Styles
-    if (node.styles.backgroundColor) {
+    if (node.styles.backgroundColor && !node.styles.backgroundColor.startsWith("[")) {
       rules.push(`  background-color: ${node.styles.backgroundColor};`);
     }
     if (node.styles.gradient) {
@@ -926,12 +1155,33 @@ function generateReactNative(root: ExtractedNode): string {
         style.height = node.height;
       }
 
-      if (node.layout.isAbsolute) {
+      if (node.layout?.isAbsolute || node.absolutePosition) {
         style.position = "absolute";
+        if (node.absolutePosition) {
+          if (typeof node.absolutePosition.top === "number") {
+            style.top = node.absolutePosition.top;
+          }
+          if (
+            typeof node.absolutePosition.right === "number" &&
+            typeof node.absolutePosition.left === "number" &&
+            node.absolutePosition.right < node.absolutePosition.left
+          ) {
+            style.right = node.absolutePosition.right;
+          } else if (typeof node.absolutePosition.left === "number") {
+            style.left = node.absolutePosition.left;
+          }
+          if (
+            typeof node.absolutePosition.bottom === "number" &&
+            typeof node.absolutePosition.top === "number" &&
+            node.absolutePosition.bottom < node.absolutePosition.top
+          ) {
+            style.bottom = node.absolutePosition.bottom;
+          }
+        }
       }
     }
 
-    if (node.styles.backgroundColor) {
+    if (node.styles.backgroundColor && !node.styles.backgroundColor.startsWith("[")) {
       style.backgroundColor = node.styles.backgroundColor;
     }
     if (node.styles.borderRadius) {

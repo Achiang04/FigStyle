@@ -581,7 +581,19 @@
 
         const preview = document.createElement('div');
         preview.className = 'asset-preview';
-        preview.innerHTML = item.svg || '';
+
+        if (item.type === 'image' && item.dataUri) {
+          const img = document.createElement('img');
+          img.src = item.dataUri;
+          img.alt = item.name;
+          img.style.width = '100%';
+          img.style.height = '100%';
+          img.style.objectFit = 'cover';
+          img.style.borderRadius = Math.abs(item.width - item.height) <= 4 ? '50%' : '4px';
+          preview.appendChild(img);
+        } else {
+          preview.innerHTML = item.svg || '';
+        }
 
         const name = document.createElement('div');
         name.className = 'asset-name';
@@ -598,8 +610,10 @@
         btnCopy.textContent = item.type === 'image' ? 'Copy Tag' : 'Copy SVG';
         btnCopy.addEventListener('click', () => {
           if (item.type === 'image') {
+            const uri = item.dataUri ? item.dataUri : 'https://placeholder...';
+            const radiusStyle = Math.abs(item.width - item.height) <= 4 ? `, borderRadius: ${Math.round(item.width / 2)}` : '';
             copyText(
-              `<Image source={{ uri: "https://placeholder..." }} style={{ width: ${item.width}, height: ${item.height} }} />`,
+              `<Image source={{ uri: "${uri}" }} style={{ width: ${item.width}, height: ${item.height}${radiusStyle} }} />`,
               `Copied JSX Image Tag: ${item.name}`
             );
           } else {
