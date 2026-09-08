@@ -618,8 +618,8 @@ async function processNode(
     }
   }
 
-  // Fills (background & color)
-  if ("fills" in node && Array.isArray(node.fills) && node.fills.length > 0) {
+  // Fills (background & color - skip TEXT nodes since their fills represent font color)
+  if (node.type !== "TEXT" && "fills" in node && Array.isArray(node.fills) && node.fills.length > 0) {
     const visibleFills = (node.fills as ReadonlyArray<Paint>).filter((f) => f.visible !== false);
     for (const fill of visibleFills) {
       if (fill.type === "SOLID") {
@@ -793,6 +793,13 @@ async function processNode(
       // Fallback if getStyledTextSegments fails
       const font =
         typeof textNode.fontName === "object" ? textNode.fontName : null;
+      let fallbackColor: string | undefined;
+      if ("fills" in textNode && Array.isArray(textNode.fills) && textNode.fills.length > 0) {
+        const firstVisibleFill = (textNode.fills as ReadonlyArray<Paint>).find((f) => f.visible !== false);
+        if (firstVisibleFill && firstVisibleFill.type === "SOLID") {
+          fallbackColor = paintToColorString(firstVisibleFill);
+        }
+      }
       segments.push({
         text: textNode.characters,
         fontFamily: font ? font.family : "Inter",
@@ -801,7 +808,7 @@ async function processNode(
           typeof textNode.fontSize === "number"
             ? Math.round(textNode.fontSize)
             : 16,
-        color: extracted.styles.backgroundColor,
+        color: fallbackColor,
       });
     }
 
