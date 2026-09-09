@@ -262,6 +262,20 @@ function hasImageFill(node: SceneNode): boolean {
   return false;
 }
 
+// Check if a node or any of its descendants has visible IMAGE fills
+function hasImageFillDeep(node: SceneNode, maxDepth: number = 4): boolean {
+  if (hasImageFill(node)) return true;
+  if (maxDepth <= 0) return false;
+  if ("children" in node && Array.isArray(node.children)) {
+    for (const child of node.children) {
+      if (hasImageFillDeep(child, maxDepth - 1)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 // Collection / list keywords - these indicate a container of items rather than a single asset
 const COLLECTION_CONTAINER_KEYWORDS = [
   "list", "group", "stack", "row", "col", "column", "grid", "collection", "container",
@@ -328,7 +342,7 @@ function isAvatarCollection(node: SceneNode): boolean {
 
     // If an AutoLayout flex row contains 2 or more image children, it is an avatar row/collection
     if (isAutoLayout) {
-      const imageChildrenCount = (node as any).children.filter((c: SceneNode) => hasImageFill(c)).length;
+      const imageChildrenCount = (node as any).children.filter((c: SceneNode) => hasImageFillDeep(c)).length;
       if (imageChildrenCount >= 2) return true;
     }
   }
@@ -370,12 +384,16 @@ function isIconOrAsset(node: SceneNode, isRoot: boolean): boolean {
     return true;
   }
 
+  const childrenCount = "children" in node && Array.isArray(node.children) ? node.children.length : 0;
+
   // 4. Single Avatar or Photo leaf element (has image fill and <= 1 child)
-  if (hasImageFill(node)) {
-    const childrenCount = "children" in node && Array.isArray(node.children) ? node.children.length : 0;
-    if (childrenCount <= 1) {
-      return true;
+  if (hasImageFillDeep(node)) {
+    // If container has multiple children (e.g. photo + camera badge button),
+    // keep it as a UI container so both photo and badge are extracted individually!
+    if (childrenCount > 1) {
+      return false;
     }
+    return true;
   }
 
   // 5. Direct vector shapes are vector assets
@@ -396,8 +414,6 @@ function isIconOrAsset(node: SceneNode, isRoot: boolean): boolean {
     node.type === "COMPONENT" ||
     node.type === "INSTANCE"
   ) {
-    const childrenCount = "children" in node && Array.isArray(node.children) ? node.children.length : 0;
-
     // Figma GROUP with no text is typically an illustration, mascot, or graphic drawing
     if (node.type === "GROUP" && childrenCount > 0 && node.width <= 700 && node.height <= 700) {
       return true;
@@ -428,16 +444,96 @@ function isIconOrAsset(node: SceneNode, isRoot: boolean): boolean {
 
     // Small graphic containers <= 48x48 with no text are almost universally icons/indicators
     if (node.width <= 48 && node.height <= 48) {
+      if (hasImageFillDeep(node) && childrenCount > 1) return false;
       return true;
     }
 
     // Containers up to 72x72 where width == height (square icon containers)
     if (node.width <= 72 && node.height <= 72 && Math.abs(node.width - node.height) <= 4) {
+      if (hasImageFillDeep(node) && childrenCount > 1) return false;
       return true;
     }
   }
 
   return false;
+}
+
+// Clean and optimize exported SVG string to be compact, standard, and lightning fast
+function optimizeSvg(rawSvg: string): string {
+  if (!rawSvg || typeof rawSvg !== "string") return "";
+
+  let svg = rawSvg.trim();
+
+  // 1. Remove XML declaration and DOCTYPE
+  svg = svg.replace(/<\?xml[\s\S]*?\?>/gi, "");
+  svg = svg.replace(/<!DOCTYPE[\s\S]*?>/gi, "");
+
+  // 2. Remove XML comments
+  svg = svg.replace(/<!--[\s\S]*?-->/g, "");
+
+  // 3. Remove metadata, desc, title tags
+  svg = svg.replace(/<(metadata|desc|title)[\s\S]*?<\/\1>/gi, "");
+
+  // 4. Remove xmlns:xlink if xlink is not used elsewhere
+  if (!svg.includes("xlink:href") && !svg.includes("xlink:title")) {
+    svg = svg.replace(/\s+xmlns:xlink="[^"]*"/gi, "");
+  }
+
+  // 5. Remove xml:space="preserve"
+  svg = svg.replace(/\s+xml:space="[^"]*"/gi, "");
+
+  // 6. Find all IDs that are referenced in url(#id) or href="#id"
+  const referencedIds = new Set<string>();
+  const refMatches = svg.matchAll(/url\(#([a-zA-Z0-9_\-]+)\)|href="#([a-zA-Z0-9_\-]+)"/g);
+  for (const m of refMatches) {
+    if (m[1]) referencedIds.add(m[1]);
+    if (m[2]) referencedIds.add(m[2]);
+  }
+
+  // Strip unreferenced id attributes to eliminate verbose Figma layer IDs
+  svg = svg.replace(/\s+id="([^"]+)"/g, (match, idVal) => {
+    return referencedIds.has(idVal) ? match : "";
+  });
+
+  // 7. Remove redundant full-bleed clipPath and wrapping <g clip-path="...">
+  const clipPathRegex = /<clipPath\s+id="([^"]+)">\s*<rect\s+([^>]*)\/>\s*<\/clipPath>/gi;
+  const redundantClipIds = new Set<string>();
+  let clipMatch: RegExpExecArray | null;
+  while ((clipMatch = clipPathRegex.exec(svg)) !== null) {
+    const clipId = clipMatch[1];
+    const rectAttrs = clipMatch[2];
+    const hasRadius = /r[xy]=/i.test(rectAttrs);
+    const hasTransform = /transform=/i.test(rectAttrs);
+    const hasOffset = /x="[1-9]|y="[1-9]/i.test(rectAttrs);
+    if (!hasRadius && !hasTransform && !hasOffset) {
+      redundantClipIds.add(clipId);
+    }
+  }
+
+  for (const clipId of redundantClipIds) {
+    const cpPattern = new RegExp(`<clipPath\\s+id="${clipId}">[\\s\\S]*?<\\/clipPath>`, "gi");
+    svg = svg.replace(cpPattern, "");
+    const gPattern = new RegExp(`<g\\s+clip-path="url\\(#${clipId}\\)">([\\s\\S]*?)<\\/g>`, "gi");
+    svg = svg.replace(gPattern, "$1");
+  }
+
+  // 8. Remove empty <defs></defs> and empty <g></g>
+  svg = svg.replace(/<defs>\s*<\/defs>/gi, "");
+  svg = svg.replace(/<g>\s*<\/g>/gi, "");
+
+  // 9. Round long floating point numbers (3+ decimal digits) to at most 2 decimals
+  svg = svg.replace(/(-?\d+\.\d{3,})/g, (numStr) => {
+    const val = parseFloat(numStr);
+    if (isNaN(val)) return numStr;
+    const rounded = Math.round(val * 100) / 100;
+    return rounded.toString();
+  });
+
+  // 10. Collapse multiple whitespace and newlines
+  svg = svg.replace(/>\s+</g, "><");
+  svg = svg.replace(/\s{2,}/g, " ");
+
+  return svg.trim();
 }
 
 // Extract and export SVG (with timeout protection so Figma never freezes)
@@ -487,7 +583,7 @@ async function exportNodeToSvg(node: SceneNode): Promise<string | null> {
 // Extract image asset as lightweight PNG & base64 dataUri
 async function exportNodeToImage(
   node: SceneNode,
-  maxDimension: number = 200
+  maxDimension: number = 120
 ): Promise<{ dataUri: string; svgPreview: string } | null> {
   const exportTask = (async () => {
     try {
@@ -507,15 +603,11 @@ async function exportNodeToImage(
         const dataUri = `data:image/png;base64,${base64}`;
         const w = Math.round(node.width);
         const h = Math.round(node.height);
-        const radius =
-          "cornerRadius" in node && typeof (node as any).cornerRadius === "number"
-            ? (node as any).cornerRadius
-            : w <= 64
-            ? Math.round(w / 2)
-            : 6;
+        const isCircle = Math.abs(w - h) <= 4 && w <= 96;
+        const radius = isCircle ? Math.round(w / 2) : 6;
 
-        // Clean SVG wrapper around the image for SVG preview / fallback
-        const svgPreview = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" fill="none" xmlns="http://www.w3.org/2000/svg"><defs><clipPath id="clip-${node.id.replace(/[^a-zA-Z0-9]/g, "")}"><rect width="${w}" height="${h}" rx="${radius}" /></clipPath></defs><image href="${dataUri}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid slice" clip-path="url(#clip-${node.id.replace(/[^a-zA-Z0-9]/g, "")})" /></svg>`;
+        // Clean lightweight SVG vector placeholder (NEVER embed massive base64 in SVG!)
+        const svgPreview = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" rx="${radius}" fill="#334155"/><circle cx="${Math.round(w / 2)}" cy="${Math.round(h * 0.4)}" r="${Math.round(w * 0.18)}" fill="#94A3B8"/><path d="M${Math.round(w * 0.2)} ${Math.round(h * 0.85)}C${Math.round(w * 0.2)} ${Math.round(h * 0.65)} ${Math.round(w * 0.35)} ${Math.round(h * 0.6)} ${Math.round(w * 0.5)} ${Math.round(h * 0.6)}C${Math.round(w * 0.65)} ${Math.round(h * 0.6)} ${Math.round(w * 0.8)} ${Math.round(h * 0.65)} ${Math.round(w * 0.8)} ${Math.round(h * 0.85)}Z" fill="#94A3B8"/></svg>`;
 
         return { dataUri, svgPreview };
       }
@@ -569,28 +661,51 @@ async function processNode(
     };
   }
 
-  const isImg = hasImageFill(node);
+  const isImg = hasImageFillDeep(node);
   const isAsset = isIconOrAsset(node, isRoot);
 
   // Check if this node is an icon/vector/image asset container
   if (isAsset && Object.keys(assets).length < (options.maxSvgCount || 80)) {
-    const assetKey = `${cleanName}-${node.id.replace(/[^a-zA-Z0-9]/g, "")}`;
+    // Generate clean, readable asset key (cleanName + short ID)
+    const rawId = node.id.replace(/[^a-zA-Z0-9]/g, "");
+    const shortId = rawId.slice(-6) || "0";
+    let assetKey = `${cleanName}-${shortId}`;
+    let counter = 2;
+    while (assets[assetKey]) {
+      assetKey = `${cleanName}-${shortId}-${counter++}`;
+    }
+
     let svgCode: string | null = null;
     let dataUri: string | undefined = undefined;
+    let finalType: "vector" | "image" = isImg ? "image" : "vector";
 
     if (!isImg) {
       // Vector icon or illustration: export real SVG
       svgCode = await exportNodeToSvg(node);
-      // Fallback: if SVG export failed on container, try image export
-      if (!svgCode) {
+
+      // Check if Figma embedded a base64 raster image inside the SVG
+      if (svgCode && (svgCode.includes("<image") || svgCode.includes("data:image/"))) {
+        finalType = "image";
         const imgRes = await exportNodeToImage(node);
         if (imgRes) {
+          svgCode = imgRes.svgPreview;
+          dataUri = imgRes.dataUri;
+        } else {
+          svgCode = optimizeSvg(svgCode.replace(/<image[\s\S]*?\/>/gi, ""));
+        }
+      } else if (svgCode) {
+        svgCode = optimizeSvg(svgCode);
+      } else {
+        // Fallback: if SVG export failed on container, try image export
+        const imgRes = await exportNodeToImage(node);
+        if (imgRes) {
+          finalType = "image";
           svgCode = imgRes.svgPreview;
           dataUri = imgRes.dataUri;
         }
       }
     } else {
-      // Real image / photo / avatar: export crisp PNG & base64 dataUri
+      // Real image / photo / avatar: export crisp thumbnail PNG & vector placeholder
       const imgRes = await exportNodeToImage(node);
       if (imgRes) {
         svgCode = imgRes.svgPreview;
@@ -604,14 +719,14 @@ async function processNode(
     if (svgCode) {
       assets[assetKey] = {
         name: node.name,
-        type: isImg || dataUri ? "image" : "vector",
+        type: finalType,
         width: Math.round(node.width),
         height: Math.round(node.height),
         svg: svgCode,
         dataUri,
       };
       extracted.assetKey = assetKey;
-      if (isImg || dataUri) {
+      if (finalType === "image") {
         extracted.styles.backgroundColor = `[Image Asset: ${node.name}]`;
       }
       return extracted;
@@ -852,9 +967,6 @@ function generateAiSpec(root: ExtractedNode, assets: AssetMap): string {
       const asset = assets[node.assetKey];
       if (asset && asset.type === "image") {
         item.imageAssetKey = node.assetKey;
-        if (asset.dataUri) {
-          item.dataUri = asset.dataUri;
-        }
       } else {
         item.iconAssetKey = node.assetKey;
       }
@@ -908,15 +1020,15 @@ function generateAiSpec(root: ExtractedNode, assets: AssetMap): string {
   const assetList: { [key: string]: any } = {};
   for (const [key, val] of Object.entries(assets)) {
     if (val.type === "image") {
+      const isCircle = Math.abs(val.width - val.height) <= 4 && val.width <= 96;
+      const radiusStyle = isCircle ? `, borderRadius: ${Math.round(val.width / 2)}` : "";
       assetList[key] = {
         type: "image",
         name: val.name,
         width: val.width,
         height: val.height,
-        dataUri: val.dataUri,
-        renderAs: val.dataUri
-          ? `<Image source={{ uri: "${val.dataUri}" }} style={{ width: ${val.width}, height: ${val.height} }} />`
-          : `<Image source={{ uri: "placeholder" }} style={{ width: ${val.width}, height: ${val.height} }} />`,
+        renderAs: `<Image source={{ uri: "https://images.unsplash.com/photo-placeholder" }} style={{ width: ${val.width}, height: ${val.height}${radiusStyle} }} />`,
+        assetPath: `assets/${key}.png`,
       };
     } else {
       assetList[key] = val.svg;
@@ -927,7 +1039,7 @@ function generateAiSpec(root: ExtractedNode, assets: AssetMap): string {
   const aiPrompt = `### FIGMA DESIGN SPECIFICATION (PIXEL-PERFECT IMPLEMENTATION)
 Use this exact hierarchical spec and assets to build the component/screen.
 DO NOT guess spacing, font sizes, or colors. Use the exact values below.
-For all icons and assets, render the provided raw SVG code or image data URI directly.
+For all icons, render the provided clean SVG code directly. For image assets, use the suggested component or local asset path.
 
 ---
 #### 1. SCREEN HIERARCHY & STYLES (JSON Tree)

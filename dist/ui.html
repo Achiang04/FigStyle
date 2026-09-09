@@ -230,7 +230,9 @@
       font-size: 11px;
       line-height: 1.5;
       color: #d4d4d4;
-      white-space: pre;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow-wrap: anywhere;
       user-select: text;
     }
 
@@ -294,7 +296,14 @@
       color: var(--text-secondary);
     }
 
+    .asset-actions {
+      display: flex;
+      gap: 4px;
+      width: 100%;
+    }
+
     .btn-copy-asset {
+      flex: 1;
       width: 100%;
       background: var(--bg-tertiary);
       border: 1px solid var(--border-color);
@@ -303,6 +312,7 @@
       border-radius: 4px;
       font-size: 10px;
       cursor: pointer;
+      text-align: center;
       transition: all 0.15s;
     }
 
@@ -491,22 +501,39 @@
       }, 2000);
     }
 
-    // Copy to clipboard helper
+    // Copy to clipboard helper (fast & non-blocking)
     async function copyText(text, successMsg = 'Copied to clipboard!') {
       try {
-        await navigator.clipboard.writeText(text);
-        showToast(successMsg);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+          showToast(successMsg);
+          return;
+        }
       } catch (err) {
-        // Fallback for iframe restrictions
+        // Fallback below
+      }
+
+      try {
         const textArea = document.createElement('textarea');
         textArea.value = text;
         textArea.style.position = 'fixed';
+        textArea.style.top = '0';
         textArea.style.left = '-9999px';
+        textArea.style.width = '1px';
+        textArea.style.height = '1px';
+        textArea.style.opacity = '0';
+        textArea.setAttribute('readonly', '');
         document.body.appendChild(textArea);
         textArea.select();
-        document.execCommand('copy');
+        const successful = document.execCommand('copy');
         document.body.removeChild(textArea);
-        showToast(successMsg);
+        if (successful) {
+          showToast(successMsg);
+        } else {
+          showToast('Copy failed, please copy manually');
+        }
+      } catch (e) {
+        showToast('Copy failed');
       }
     }
 
@@ -605,26 +632,49 @@
         const typeLabel = item.type === 'image' ? 'IMG' : 'SVG';
         size.textContent = `${item.width} × ${item.height}px (${typeLabel})`;
 
-        const btnCopy = document.createElement('button');
-        btnCopy.className = 'btn-copy-asset';
-        btnCopy.textContent = item.type === 'image' ? 'Copy Tag' : 'Copy SVG';
-        btnCopy.addEventListener('click', () => {
-          if (item.type === 'image') {
-            const uri = item.dataUri ? item.dataUri : 'https://placeholder...';
-            const radiusStyle = Math.abs(item.width - item.height) <= 4 ? `, borderRadius: ${Math.round(item.width / 2)}` : '';
+        const actions = document.createElement('div');
+        actions.className = 'asset-actions';
+
+        if (item.type === 'image') {
+          const isCircle = Math.abs(item.width - item.height) <= 4 && item.width <= 96;
+          const radiusStyle = isCircle ? `, borderRadius: ${Math.round(item.width / 2)}` : '';
+
+          const btnCopyTag = document.createElement('button');
+          btnCopyTag.className = 'btn-copy-asset';
+          btnCopyTag.textContent = 'Copy Tag';
+          btnCopyTag.title = 'Copy clean JSX Image component';
+          btnCopyTag.addEventListener('click', () => {
             copyText(
-              `<Image source={{ uri: "${uri}" }} style={{ width: ${item.width}, height: ${item.height}${radiusStyle} }} />`,
+              `<Image source={{ uri: "https://images.unsplash.com/photo-placeholder" }} style={{ width: ${item.width}, height: ${item.height}${radiusStyle} }} />`,
               `Copied JSX Image Tag: ${item.name}`
             );
-          } else {
-            copyText(item.svg, `Copied SVG: ${item.name}`);
+          });
+          actions.appendChild(btnCopyTag);
+
+          if (item.dataUri) {
+            const btnCopyUri = document.createElement('button');
+            btnCopyUri.className = 'btn-copy-asset';
+            btnCopyUri.textContent = 'URI';
+            btnCopyUri.title = 'Copy base64 data URI';
+            btnCopyUri.addEventListener('click', () => {
+              copyText(item.dataUri, `Copied Data URI: ${item.name}`);
+            });
+            actions.appendChild(btnCopyUri);
           }
-        });
+        } else {
+          const btnCopy = document.createElement('button');
+          btnCopy.className = 'btn-copy-asset';
+          btnCopy.textContent = 'Copy SVG';
+          btnCopy.addEventListener('click', () => {
+            copyText(item.svg, `Copied SVG: ${item.name}`);
+          });
+          actions.appendChild(btnCopy);
+        }
 
         card.appendChild(preview);
         card.appendChild(name);
         card.appendChild(size);
-        card.appendChild(btnCopy);
+        card.appendChild(actions);
         assetsGrid.appendChild(card);
       });
     }
@@ -645,7 +695,24 @@
 
     btnCopyAllSvgs.addEventListener('click', () => {
       if (currentData && currentData.assets) {
-        const json = JSON.stringify(currentData.assets, null, 2);
+        const cleanAssets = {};
+        for (const [k, v] of Object.entries(currentData.assets)) {
+          if (v.type === 'image') {
+            const isCircle = Math.abs(v.width - v.height) <= 4 && v.width <= 96;
+            const radiusStyle = isCircle ? `, borderRadius: ${Math.round(v.width / 2)}` : '';
+            cleanAssets[k] = {
+              name: v.name,
+              type: 'image',
+              width: v.width,
+              height: v.height,
+              renderAs: `<Image source={{ uri: "https://images.unsplash.com/photo-placeholder" }} style={{ width: ${v.width}, height: ${v.height}${radiusStyle} }} />`,
+              assetPath: `assets/${k}.png`,
+            };
+          } else {
+            cleanAssets[k] = v.svg;
+          }
+        }
+        const json = JSON.stringify(cleanAssets, null, 2);
         copyText(json, 'Copied all assets dictionary!');
       }
     });
